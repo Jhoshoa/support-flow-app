@@ -1,0 +1,68 @@
+# =====================
+# Backend (Rails)
+# =====================
+
+# Ignore bundler config.
+/backend/.bundle
+
+# Ignore all environment files.
+/backend/.env*
+!/backend/.env.example
+
+# Ignore all logfiles and tempfiles.
+/backend/log/*
+!/backend/log/.keep
+
+# Ignore pidfiles, but keep the directory.
+/backend/tmp/pids/*
+!/backend/tmp/pids/
+!/backend/tmp/pids/.keep
+
+# Ignore other tempfiles.
+/backend/tmp/*
+!/backend/tmp/.keep
+
+# Ignore storage (uploaded files and SQLite databases).
+/backend/storage/*
+!/backend/storage/.keep
+/backend/tmp/storage/*
+!/backend/tmp/storage/
+!/backend/tmp/storage/.keep
+
+# Ignore key files for decrypting credentials.
+/backend/config/master.key
+/backend/config/credentials.yml.enc
+
+# SQLite databases
+/backend/db/*.sqlite3
+/backend/db/*.sqlite3-*
+
+# =====================
+# Frontend (Vue + Vite)
+# =====================
+
+/frontend/node_modules/
+/frontend/dist/
+/frontend/.env
+/frontend/.env.local
+/frontend/.env.*.local
+
+# =====================
+# General
+# =====================
+.DS_Store
+Thumbs.db
+*.log
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Yarn (if used)
+/yarn-error.log
+/yarn-debug.log
+/.yarn-integrity
+
+# NPM debug logs
+/npm-debug.log*
