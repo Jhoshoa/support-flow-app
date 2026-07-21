@@ -7,6 +7,10 @@ RSpec.describe 'Api::V1::SupportRequests', type: :request do
 
     let!(:open_request) { create(:support_request, status: :open, priority: :high, creator: support_member, team: developer) }
     let!(:in_progress_request) { create(:support_request, status: :in_progress, priority: :medium, creator: support_member, team: developer, assignee: developer) }
+    let!(:overdue_request) do
+      create(:support_request, status: :open, priority: :critical, creator: support_member, team: developer,
+        due_date: 2.days.ago)
+    end
     let!(:resolved_request) do
       sr = create(:support_request, status: :open, priority: :low, creator: support_member, team: developer)
       create(:comment, support_request: sr, team_member: developer)
@@ -19,17 +23,46 @@ RSpec.describe 'Api::V1::SupportRequests', type: :request do
 
       expect(response).to have_http_status(:ok)
       json = JSON.parse(response.body)
-      expect(json['support_requests'].size).to eq(3)
-      ids = json['support_requests'].map { |r| r['id'] }
-      expect(ids).to eq([resolved_request.id, in_progress_request.id, open_request.id])
+      expect(json['support_requests'].size).to eq(4)
     end
 
-    it 'returns correct fields' do
+    it 'returns correct fields matching API contract' do
       get '/api/v1/support_requests'
 
       json = JSON.parse(response.body)
       sr = json['support_requests'].first
-      expect(sr).to include('id', 'title', 'description', 'status', 'priority', 'assignee', 'comments_count')
+      expect(sr).to include(
+        'id', 'title', 'description', 'status', 'priority',
+        'due_date', 'completed_at', 'overdue', 'team_member',
+        'comments_count', 'created_at', 'updated_at'
+      )
+      expect(sr).not_to have_key('assignee')
+      expect(sr).not_to have_key('resolved_at')
+    end
+
+    it 'returns overdue boolean computed from due_date' do
+      get '/api/v1/support_requests'
+
+      json = JSON.parse(response.body)
+      overdue = json['support_requests'].find { |r| r['id'] == overdue_request.id }
+      expect(overdue['overdue']).to be true
+      expect(overdue['due_date']).to eq(overdue_request.due_date.to_s)
+    end
+
+    it 'returns team_member as assignee info' do
+      get '/api/v1/support_requests'
+
+      json = JSON.parse(response.body)
+      assigned = json['support_requests'].find { |r| r['id'] == in_progress_request.id }
+      expect(assigned['team_member']).to eq({ 'id' => developer.id, 'name' => developer.name })
+    end
+
+    it 'returns null team_member when unassigned' do
+      get '/api/v1/support_requests'
+
+      json = JSON.parse(response.body)
+      unassigned = json['support_requests'].find { |r| r['id'] == open_request.id }
+      expect(unassigned['team_member']).to be_nil
     end
 
     it 'filters by status' do
@@ -37,8 +70,8 @@ RSpec.describe 'Api::V1::SupportRequests', type: :request do
 
       expect(response).to have_http_status(:ok)
       json = JSON.parse(response.body)
-      expect(json['support_requests'].size).to eq(1)
-      expect(json['support_requests'].first['status']).to eq('open')
+      expect(json['support_requests'].size).to eq(2)
+      expect(json['support_requests'].map { |r| r['status'] }).to all(eq('open'))
     end
 
     it 'filters by priority' do
@@ -56,7 +89,17 @@ RSpec.describe 'Api::V1::SupportRequests', type: :request do
       expect(response).to have_http_status(:ok)
       json = JSON.parse(response.body)
       expect(json['support_requests'].size).to eq(1)
-      expect(json['support_requests'].first['assignee']['id']).to eq(developer.id)
+      expect(json['support_requests'].first['team_member']['id']).to eq(developer.id)
+    end
+
+    it 'filters overdue requests' do
+      get '/api/v1/support_requests', params: { overdue: 'true' }
+
+      expect(response).to have_http_status(:ok)
+      json = JSON.parse(response.body)
+      expect(json['support_requests'].size).to eq(1)
+      expect(json['support_requests'].first['id']).to eq(overdue_request.id)
+      expect(json['support_requests'].first['overdue']).to be true
     end
 
     it 'filters unassigned requests' do
@@ -64,8 +107,10 @@ RSpec.describe 'Api::V1::SupportRequests', type: :request do
 
       expect(response).to have_http_status(:ok)
       json = JSON.parse(response.body)
-      expect(json['support_requests'].size).to eq(2)
-      expect(json['support_requests'].map { |r| r['id'] }).to include(open_request.id, resolved_request.id)
+      expect(json['support_requests'].size).to eq(3)
+      json['support_requests'].each do |sr|
+        expect(sr['team_member']).to be_nil
+      end
     end
 
     it 'filters by text search' do
@@ -101,7 +146,7 @@ RSpec.describe 'Api::V1::SupportRequests', type: :request do
     let!(:member) { create(:team_member, :developer) }
     let!(:request_record) { create(:support_request, status: :open, creator: member, team: member) }
 
-    it 'returns the support request with comments' do
+    it 'returns the support request with comments including author_name' do
       create(:comment, support_request: request_record, team_member: member, body: "First comment here")
       create(:comment, support_request: request_record, team_member: member, body: "Second comment here")
 
@@ -112,21 +157,31 @@ RSpec.describe 'Api::V1::SupportRequests', type: :request do
       expect(json['id']).to eq(request_record.id)
       expect(json['comments'].size).to eq(2)
       expect(json['comments'].first['body']).to eq('First comment here')
+      expect(json['comments'].first['author_name']).to eq(member.name)
     end
 
-    it 'returns assignee details when assigned' do
+    it 'returns overdue field in detail' do
+      request_record.update!(due_date: 2.days.ago)
+      get "/api/v1/support_requests/#{request_record.id}"
+
+      json = JSON.parse(response.body)
+      expect(json['overdue']).to be true
+      expect(json['due_date']).to eq(request_record.due_date.to_s)
+    end
+
+    it 'returns team_member with full details when assigned' do
       request_record.update!(assignee: member)
       get "/api/v1/support_requests/#{request_record.id}"
 
       json = JSON.parse(response.body)
-      expect(json['assignee']['name']).to eq(member.name)
+      expect(json['team_member']).to include('id', 'name', 'email', 'role', 'active')
     end
 
-    it 'returns null assignee when unassigned' do
+    it 'returns null team_member when unassigned' do
       get "/api/v1/support_requests/#{request_record.id}"
 
       json = JSON.parse(response.body)
-      expect(json['assignee']).to be_nil
+      expect(json['team_member']).to be_nil
     end
 
     it 'returns 404 when request does not exist' do
@@ -148,13 +203,14 @@ RSpec.describe 'Api::V1::SupportRequests', type: :request do
           title: "New bug report",
           description: "Something is broken",
           priority: "high",
+          due_date: "2024-12-01",
           creator_id: creator.id,
           team_id: team.id
         }
       }
     end
 
-    it 'creates a new support request' do
+    it 'creates a new support request with due_date' do
       expect {
         post '/api/v1/support_requests', params: valid_params
       }.to change(SupportRequest, :count).by(1)
@@ -163,9 +219,10 @@ RSpec.describe 'Api::V1::SupportRequests', type: :request do
       json = JSON.parse(response.body)
       expect(json['title']).to eq('New bug report')
       expect(json['status']).to eq('open')
+      expect(json['due_date']).to eq('2024-12-01')
     end
 
-    it 'creates with assignee' do
+    it 'creates with assignee via team_member_id' do
       assignee = create(:team_member, :developer)
       post '/api/v1/support_requests', params: {
         support_request: valid_params[:support_request].merge(assignee_id: assignee.id)
@@ -173,7 +230,7 @@ RSpec.describe 'Api::V1::SupportRequests', type: :request do
 
       expect(response).to have_http_status(:created)
       json = JSON.parse(response.body)
-      expect(json['assignee']['id']).to eq(assignee.id)
+      expect(json['team_member']['id']).to eq(assignee.id)
     end
 
     it 'returns 422 when title is missing' do
@@ -211,6 +268,7 @@ RSpec.describe 'Api::V1::SupportRequests', type: :request do
       expect(response).to have_http_status(:ok)
       json = JSON.parse(response.body)
       expect(json['status']).to eq('resolved')
+      expect(json['completed_at']).not_to be_nil
     end
 
     it 'can assign to a member' do
@@ -221,7 +279,7 @@ RSpec.describe 'Api::V1::SupportRequests', type: :request do
 
       expect(response).to have_http_status(:ok)
       json = JSON.parse(response.body)
-      expect(json['assignee']['id']).to eq(assignee.id)
+      expect(json['team_member']['id']).to eq(assignee.id)
     end
 
     it 'returns 404 when request does not exist' do

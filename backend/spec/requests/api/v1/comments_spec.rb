@@ -5,23 +5,23 @@ RSpec.describe 'Api::V1::Comments', type: :request do
     let!(:member) { create(:team_member, :developer) }
     let!(:support_request) { create(:support_request, status: :open, creator: member, team: member) }
 
-    it 'creates a new comment' do
+    it 'creates a new comment with author_name' do
       expect {
         post "/api/v1/support_requests/#{support_request.id}/comments", params: {
-          comment: { body: "This is a valid comment", team_member_id: member.id }
+          comment: { body: "This is a valid comment with enough length", team_member_id: member.id }
         }
       }.to change(Comment, :count).by(1)
 
       expect(response).to have_http_status(:created)
       json = JSON.parse(response.body)
-      expect(json['body']).to eq('This is a valid comment')
-      expect(json['team_member_id']).to eq(member.id)
+      expect(json['body']).to eq('This is a valid comment with enough length')
+      expect(json['author_name']).to eq(member.name)
       expect(json['support_request_id']).to eq(support_request.id)
     end
 
     it 'returns 404 when support request does not exist' do
       post '/api/v1/support_requests/999/comments', params: {
-        comment: { body: "Test comment body", team_member_id: member.id }
+        comment: { body: "Test comment body here", team_member_id: member.id }
       }
 
       expect(response).to have_http_status(:not_found)
@@ -56,10 +56,12 @@ RSpec.describe 'Api::V1::Comments', type: :request do
       closed_request.update!(status: :closed)
 
       post "/api/v1/support_requests/#{closed_request.id}/comments", params: {
-        comment: { body: "Comment on closed request", team_member_id: member.id }
+        comment: { body: "Comment on closed request body", team_member_id: member.id }
       }
 
       expect(response).to have_http_status(:created)
+      json = JSON.parse(response.body)
+      expect(json['author_name']).to eq(member.name)
     end
   end
 end

@@ -18,7 +18,7 @@ module Api
         {
           id: comment.id,
           body: comment.body,
-          team_member_id: comment.team_member_id,
+          author_name: comment.team_member.name,
           support_request_id: comment.support_request_id,
           created_at: comment.created_at
         }

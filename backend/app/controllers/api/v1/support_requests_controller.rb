@@ -7,7 +7,7 @@ module Api
       end
 
       def show
-        support_request = SupportRequest.includes(:assignee, :comments).find(params[:id])
+        support_request = SupportRequest.includes(:assignee, comments: :team_member).find(params[:id])
         render json: serialize_request_detail(support_request)
       end
 
@@ -26,7 +26,8 @@ module Api
 
       def support_request_params
         params.require(:support_request).permit(
-          :title, :description, :status, :priority, :creator_id, :assignee_id, :team_id
+          :title, :description, :status, :priority, :due_date,
+          :creator_id, :assignee_id, :team_id
         )
       end
 
@@ -35,6 +36,7 @@ module Api
         scope = scope.where(status: params[:status]) if params[:status].present?
         scope = scope.where(priority: params[:priority]) if params[:priority].present?
         scope = scope.where(assignee_id: params[:team_member_id]) if params[:team_member_id].present?
+        scope = scope.overdue if params[:overdue] == 'true'
         scope = scope.where(assignee_id: nil) if params[:unassigned] == 'true'
         scope = scope.where('title LIKE ?', "%#{params[:q]}%") if params[:q].present?
         scope.order(created_at: :desc)
@@ -47,10 +49,10 @@ module Api
           description: request.description,
           status: request.status,
           priority: request.priority,
-          creator_id: request.creator_id,
-          assignee: request.assignee ? { id: request.assignee.id, name: request.assignee.name } : nil,
-          team_id: request.team_id,
-          resolved_at: request.resolved_at,
+          due_date: request.due_date,
+          completed_at: request.resolved_at,
+          overdue: request.overdue?,
+          team_member: request.assignee ? { id: request.assignee.id, name: request.assignee.name } : nil,
           comments_count: request.comments.count,
           created_at: request.created_at,
           updated_at: request.updated_at
@@ -64,15 +66,21 @@ module Api
           description: request.description,
           status: request.status,
           priority: request.priority,
-          creator_id: request.creator_id,
-          assignee: request.assignee ? { id: request.assignee.id, name: request.assignee.name, email: request.assignee.email } : nil,
-          team_id: request.team_id,
-          resolved_at: request.resolved_at,
-          comments: request.comments.includes(:team_member).order(created_at: :asc).map { |c|
+          due_date: request.due_date,
+          completed_at: request.resolved_at,
+          overdue: request.overdue?,
+          team_member: request.assignee ? {
+            id: request.assignee.id,
+            name: request.assignee.name,
+            email: request.assignee.email,
+            role: request.assignee.role,
+            active: request.assignee.active
+          } : nil,
+          comments: request.comments.map { |c|
             {
               id: c.id,
               body: c.body,
-              team_member: { id: c.team_member.id, name: c.team_member.name },
+              author_name: c.team_member.name,
               created_at: c.created_at
             }
           },

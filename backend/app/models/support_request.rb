@@ -17,6 +17,17 @@ class SupportRequest < ApplicationRecord
 
   validate :must_have_comments_to_resolve
 
+  before_save :set_resolved_at, if: -> { status_changed?(to: :resolved) }
+
+  scope :overdue, -> {
+    where('due_date < ?', Date.current)
+      .where.not(status: [:resolved, :closed])
+  }
+
+  def overdue?
+    due_date.present? && due_date < Date.current && !resolved? && !closed?
+  end
+
   private
 
   def must_have_comments_to_resolve
@@ -25,5 +36,9 @@ class SupportRequest < ApplicationRecord
     if comments.empty?
       errors.add(:status, "can't be resolved without at least one comment")
     end
+  end
+
+  def set_resolved_at
+    self.resolved_at = Time.current
   end
 end
