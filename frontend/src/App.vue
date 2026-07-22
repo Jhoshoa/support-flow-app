@@ -1,7 +1,8 @@
 <script setup>
-import HelloWorld from './components/HelloWorld.vue'
+import ToastContainer from '@/components/shared/ToastContainer.vue'
 </script>
 
 <template>
-  <HelloWorld />
+  <RouterView />
+  <ToastContainer />
 </template>
